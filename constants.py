@@ -11,36 +11,36 @@ REDIRECT_URI = "https://cstu.edu"
 COURSE_MAPPING_ZOOM2 = {
     'MB_CSE 590 Data Analytics': {
         'schedule': {
-            'Wesdnesday': ['7:15PM-9:49PM'],
-            'Saturday': ['12:45PM-2:39PM']
+            'Friday': ['7:30PM-9:30PM'],
+            'Saturday': ['1:00PM-2:30PM']
         },
         'folder_name': 'MB CSE 590 Data Analytics'
     },
     'MB 590 Business Law': {
         'schedule': {
-            'Thursday': ['3:55PM-6:19PM'],
-            'Saturday': ['8:55AM-10:39AM']
+            'Thursday': ['4:00PM-6:00PM'],
+            'Saturday': ['9:00AM-10:30AM']
         },
         'folder_name': 'MB 590 Business Law'
     },
     'MB 590 Innovation in Fintech': {
         'schedule': {
-            'Wesdnesday': ['3:55PM-6:19PM'],
-            'Saturday': ['4:15PM-5:59PM']
+            'Wesdnesday': ['4:00PM-6:00PM'],
+            'Saturday': ['4:20PM-5:55PM']
         },
         'folder_name': 'MB 590 Fintech Innovation'
     },
     'MB 590 Sales Operations and Management': {
         'schedule': {
-            'Tuesday': ['3:55PM-6:19PM'],
-            'Saturday': ['2:35PM-4:20PM']
+            'Tuesday': ['4:00PM-6:00PM'],
+            'Saturday': ['2:40PM-4:10PM']
         },
         'folder_name': 'MB 590 Sales Operations'
     },
     'MB 590 AI and project management': {
         'schedule': {
-            'Tuesday': ['7:25PM-9:49PM'],
-            'Saturday': ['10:35AM-12:25PM']
+            'Tuesday': ['7:30PM-9:30PM'],
+            'Saturday': ['10:30AM-12:10PM']
         },
         'folder_name': 'MB 590 AI Project Management'
     }

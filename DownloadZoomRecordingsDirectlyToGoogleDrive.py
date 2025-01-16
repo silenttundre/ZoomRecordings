@@ -22,18 +22,23 @@ from googleapiclient.http import MediaIoBaseUpload
 from googleapiclient.errors import HttpError
 
 
-def parse_time_range(time_str):
+def parse_time_range(time_str, is_saturday=False):
     """
-    Parse a time range string into start and end datetime times
+    Parse a time range string into start and end datetime times with buffers
+
+    Note: if the meeting_day is 'Saturday', then, add 5 mins before
+    the start_time and add 5 mins after the end_time during parse time range.
+    Otherwise, add 10 mins before the start_time and 10 mins after the end_time.
 
     Args:
         time_str (str): Time range in format '4:00pm - 6:19pm'
+        is_saturday (bool): Whether the day is Saturday
 
     Returns:
         tuple: (start_time, end_time) as datetime.time objects
     """
     import re
-    from datetime import datetime, time
+    from datetime import datetime, time, timedelta
 
     # Remove any extra whitespace around the hyphen and split the time range
     time_str = time_str.replace(' ', '')
@@ -61,11 +66,21 @@ def parse_time_range(time_str):
     elif end_meridiem.lower() == 'am' and end_hour == 12:
         end_hour = 0
 
-    start_time = time(start_hour, int(start_minute))
-    end_time = time(end_hour, int(end_minute))
+    # Create datetime objects for easier manipulation
+    base_date = datetime.now().date()
+    start_datetime = datetime.combine(base_date, time(start_hour, int(start_minute)))
+    end_datetime = datetime.combine(base_date, time(end_hour, int(end_minute)))
+
+    # Apply buffer based on whether it's Saturday or not
+    buffer_minutes = 5 if is_saturday else 10
+    start_datetime = start_datetime - timedelta(minutes=buffer_minutes)
+    end_datetime = end_datetime + timedelta(minutes=buffer_minutes)
+
+    # Convert back to time objects
+    start_time = start_datetime.time()
+    end_time = end_datetime.time()
 
     return start_time, end_time
-
 
 def get_mimetype(file_extension):
     """
@@ -141,7 +156,6 @@ def ensure_folder_exists(drive_service, parent_folder_name, subfolder_name):
 
     return subfolder_id
 
-
 def get_course_from_mapping(meeting_datetime):
     """
     Find matching course based on the meeting time and day
@@ -154,6 +168,7 @@ def get_course_from_mapping(meeting_datetime):
     """
     meeting_time = meeting_datetime.time()
     meeting_day = meeting_datetime.strftime('%A')
+    is_saturday = meeting_day == 'Saturday'
 
     for course_name, course_info in COURSE_MAPPING_ZOOM2.items():
         try:
@@ -166,8 +181,8 @@ def get_course_from_mapping(meeting_datetime):
 
             # Check time ranges for this day
             for time_range in day_times:
-                # Parse time range
-                start_time, end_time = parse_time_range(time_range)
+                # Parse time range with appropriate buffer
+                start_time, end_time = parse_time_range(time_range, is_saturday)
 
                 # Check if meeting time is within the course time range
                 if start_time <= meeting_time <= end_time:
@@ -178,80 +193,35 @@ def get_course_from_mapping(meeting_datetime):
 
     return None
 
+def get_meeting_participants(access_token, meeting_id):
+  """
+  Fetches a list of participants for a given Zoom meeting.
 
-def get_meeting_participants(meeting_id, access_token):
-    """
-    Fetch participant information for a past meeting using Zoom Past Meeting API
+  Args:
+    access_token (str): The Zoom API access token.
+    meeting_id (str): The unique ID of the Zoom meeting.
 
-    Args:
-        meeting_id (str): The Zoom meeting ID
-        access_token (str): Zoom access token
+  Returns:
+    list: A list of participants, where each participant is a dictionary
+          containing information like user_id, user_name, etc.
+    None: If the API request fails or no participants are found.
+  """
+  headers = {
+      "Authorization": f"Bearer {access_token}"
+  }
 
-    Returns:
-        int: Number of participants in the meeting
-    """
-    headers = {
-        "Authorization": f"Bearer {access_token}"
-    }
+  url = f"https://api.zoom.us/v2/meetings/{meeting_id}/participants"
 
-    try:
-        # First get the past meeting instances
-        instances_response = requests.get(
-            f"{API_URL}/past_meetings/{meeting_id}/instances",
-            headers=headers
-        )
-        instances_response.raise_for_status()
-        instances_data = instances_response.json()
+  try:
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()  # Raise an exception for bad status codes
 
-        total_participants = 0
+    participants_data = response.json()
+    return participants_data['participants']
 
-        # If we have instances, check each one
-        if instances_data.get('meetings', []):
-            for instance in instances_data['meetings']:
-                try:
-                    # Get participants for this instance
-                    participants_response = requests.get(
-                        f"{API_URL}/past_meetings/{instance.get('uuid')}/participants",
-                        headers=headers
-                    )
-                    participants_response.raise_for_status()
-                    participants_data = participants_response.json()
-
-                    # Count unique participants
-                    unique_participants = set()
-                    for participant in participants_data.get('participants', []):
-                        identifier = participant.get('id') or participant.get('user_name')
-                        if identifier:
-                            unique_participants.add(identifier)
-
-                    total_participants = max(total_participants, len(unique_participants))
-                except requests.RequestException as e:
-                    print(f"Error fetching participants for meeting instance {instance.get('uuid')}: {e}")
-        else:
-            # If no instances found, try the meeting ID directly
-            try:
-                participants_response = requests.get(
-                    f"{API_URL}/past_meetings/{meeting_id}/participants",
-                    headers=headers
-                )
-                participants_response.raise_for_status()
-                participants_data = participants_response.json()
-
-                unique_participants = set()
-                for participant in participants_data.get('participants', []):
-                    identifier = participant.get('id') or participant.get('user_name')
-                    if identifier:
-                        unique_participants.add(identifier)
-
-                total_participants = len(unique_participants)
-            except requests.RequestException as e:
-                print(f"Error fetching participants for meeting {meeting_id}: {e}")
-
-        return total_participants
-
-    except requests.RequestException as e:
-        print(f"Error fetching meeting instances for {meeting_id}: {e}")
-        return 0
+  except requests.exceptions.RequestException as e:
+    print(f"Error fetching participants: {e}")
+    return None
 
 
 def download_and_upload_recordings(
@@ -279,13 +249,16 @@ def download_and_upload_recordings(
                 continue
 
             # Get meeting ID and fetch participant count
-            meeting_id = str(meeting.get('id'))  # Ensure it's a string
-            if meeting_id:
-                participant_count = get_meeting_participants(meeting_id, access_token)
-                print(f"Meeting ID {meeting_id}: {participant_count} participants")
+            meeting_id = str(meeting.get('id'))
+            participants = get_meeting_participants(access_token, meeting_id)
+
+            if participants:
+                print(f"Number of participants: {len(participants)}")
+                # Process participant data (e.g., print names, user IDs)
+                for participant in participants:
+                    print(f"Participant: {participant['user_name']}")
             else:
-                print("No meeting ID found. Skipping participant count.")
-                participant_count = 0
+                print("Failed to retrieve participants.")
 
             # Convert to datetime object
             # Convert UTC to PST
@@ -352,20 +325,20 @@ def download_and_upload_recordings(
                             'parents': [course_folder_id]
                         }
 
-                        # # Upload directly to Google Drive
-                        # media = MediaIoBaseUpload(
-                        #     file_content,
-                        #     mimetype=mimetype,
-                        #     resumable=True
-                        # )
-                        #
-                        # file = drive_service.files().create(
-                        #     body=file_metadata,
-                        #     media_body=media,
-                        #     fields='id'
-                        # ).execute()
-                        #
-                        # uploaded_file_ids.append(file.get('id'))
+                        # Upload directly to Google Drive
+                        media = MediaIoBaseUpload(
+                            file_content,
+                            mimetype=mimetype,
+                            resumable=True
+                        )
+                        
+                        file = drive_service.files().create(
+                            body=file_metadata,
+                            media_body=media,
+                            fields='id'
+                        ).execute()
+                        
+                        uploaded_file_ids.append(file.get('id'))
                         print(
                             f"Uploaded: {filename} to {date_subfolder_name}/{course_subfolder_name} (Size: {file_size_mb:.2f} MB)")
 
